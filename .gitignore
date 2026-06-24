@@ -1,0 +1,14 @@
+# IDE
+.idea/
+.vscode/
+*.suo
+*.user
+
+# Build / OS
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+Thumbs.db
+Desktop.ini
+.DS_Store
