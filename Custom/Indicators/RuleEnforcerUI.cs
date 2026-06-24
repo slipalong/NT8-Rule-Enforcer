@@ -13,7 +13,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 {
 	/// <summary>
 	/// Greys out Chart Trader sell buttons when RuleEnforcerState blocks shorts.
-	/// Requires RuleEnforcerTrend (or any component that calls RuleEnforcerState.SetShortAllowed).
+	/// Requires at least one voting indicator (or any component that calls RuleEnforcerState.SetSourceVote).
 	/// </summary>
 	public class RuleEnforcerUI : Indicator
 	{

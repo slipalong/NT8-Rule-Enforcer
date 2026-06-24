@@ -19,10 +19,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 	/// </summary>
 	public class RuleEnforcerTrend : Indicator
 	{
+		public const string VoteSourceId = "RuleEnforcerTrend";
+
 		private EMA trendEma;
 		private double cumulativeVolume;
 		private double cumulativeTypicalVolume;
-		private bool lastShortAllowed = true;
+		private bool lastVoteShortAllowed = true;
 
 		protected override void OnStateChange()
 		{
@@ -50,7 +52,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 					AddChartIndicator(trendEma);
 			}
 			else if (State == State.Terminated)
-				RuleEnforcerState.Clear(Instrument.FullName);
+				RuleEnforcerState.RemoveSource(Instrument.FullName, VoteSourceId);
 		}
 
 		protected override void OnBarUpdate()
@@ -59,23 +61,31 @@ namespace NinjaTrader.NinjaScript.Indicators
 				return;
 
 			bool uptrend = IsUptrend();
-			bool shortAllowed = !uptrend;
+			bool sourceAllowsShorts = !uptrend;
 
-			if (shortAllowed != lastShortAllowed)
+			if (sourceAllowsShorts != lastVoteShortAllowed)
 			{
-				lastShortAllowed = shortAllowed;
-				RuleEnforcerState.SetShortAllowed(Instrument.FullName, shortAllowed);
+				lastVoteShortAllowed = sourceAllowsShorts;
+				RuleEnforcerState.SetSourceVote(Instrument.FullName, VoteSourceId, sourceAllowsShorts);
 			}
 
 			if (ShowStatusLabel && IsFirstTickOfBar)
 			{
-				string status = shortAllowed
+				bool aggregateAllowsShorts = RuleEnforcerState.IsShortAllowed(Instrument.FullName);
+				string status = aggregateAllowsShorts
 					? "Shorts: ALLOWED"
-					: string.Format("Shorts: BLOCKED ({0} {1} uptrend)", EmaPeriod, UseVwapFilter ? "EMA + VWAP" : "EMA");
-				Brush color = shortAllowed ? Brushes.LimeGreen : Brushes.OrangeRed;
+					: FormatBlockedStatus();
+				Brush color = aggregateAllowsShorts ? Brushes.LimeGreen : Brushes.OrangeRed;
 				Draw.TextFixed(this, "RuleEnforcerStatus", status, TextPosition.TopRight, color,
 					new SimpleFont("Arial", 12), Brushes.Transparent, Brushes.Transparent, 0);
 			}
+		}
+
+		private string FormatBlockedStatus()
+		{
+			string[] blockers = RuleEnforcerState.GetBlockingSources(Instrument.FullName);
+			string blockerText = blockers.Length > 0 ? string.Join(", ", blockers) : VoteSourceId;
+			return string.Format("Shorts: BLOCKED ({0})", blockerText);
 		}
 
 		private int BarsRequiredToPlot() => Math.Max(EmaPeriod + 1, 2);

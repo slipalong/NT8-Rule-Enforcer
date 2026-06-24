@@ -59,20 +59,40 @@ NT8 does not provide a built-in message bus to Chart Trader. This suite uses a *
 
 ```mermaid
 flowchart LR
-    A[Rule Enforcer Trend] -->|SetShortAllowed| B[RuleEnforcerState]
-    B -->|event + read| C[Rule Enforcer UI]
+    A[Rule Enforcer Trend] -->|SetSourceVote| B[RuleEnforcerState]
+    G[Your Custom Indicator] -->|SetSourceVote| B
+    H[Another Custom Indicator] -->|SetSourceVote| B
+    B -->|aggregate + event| C[Rule Enforcer UI]
     C -->|WPF IsEnabled| D[Chart Trader Sell Buttons]
-    B -->|read| E[Rule Enforcer Order Guard]
+    B -->|IsShortAllowed| E[Rule Enforcer Order Guard]
     E -->|cancel| F[Account Order Stream]
 ```
 
 ### 1. Shared state (`RuleEnforcerState`)
 
-`RuleEnforcerState` is a static class keyed by **instrument full name** (for example, `ES 06-26`). This allows multiple charts and instruments to run independently without conflicting state.
+`RuleEnforcerState` is a static class keyed by **instrument full name** (for example, `ES 06-26`). Multiple indicators can register independent **votes** per instrument. The UI and order guard read the **aggregated** result.
 
-- `SetShortAllowed(instrument, allowed)` — called by the trend indicator when conditions change
-- `IsShortAllowed(instrument)` — read by the UI enforcer and order guard
-- `ShortAllowedChanged` event — notifies the UI immediately when permission changes
+**Voting rule:** shorts are allowed only when **every** registered source allows shorts. If **any** source blocks, shorts are blocked.
+
+| API | Purpose |
+|-----|---------|
+| `SetSourceVote(instrument, sourceId, shortAllowed)` | Register or update one indicator's vote |
+| `RemoveSource(instrument, sourceId)` | Remove vote when indicator is removed from chart |
+| `IsShortAllowed(instrument)` | Read aggregated permission (used by UI + order guard) |
+| `GetBlockingSources(instrument)` | Returns names of sources currently blocking shorts |
+| `ShortAllowedChanged` event | Fires when the aggregated result changes |
+
+Example with three voters on `ES 06-26`:
+
+```
+RuleEnforcerTrend     → block   (shortAllowed = false)
+HigherTfFilter        → allow   (shortAllowed = true)
+DeltaStructureFilter  → block   (shortAllowed = false)
+
+Aggregate: BLOCKED
+```
+
+If no votes are registered for an instrument, shorts are **allowed** by default.
 
 ### 2. Trend detection (`RuleEnforcerTrend`)
 
@@ -129,6 +149,126 @@ Together, these layers provide both **visible feedback** and **practical enforce
 | Use VWAP Filter | true | Requires price above session VWAP |
 | Show EMA | true | Displays the 21 EMA on chart |
 | Show Status Label | true | Top-right block/allow label |
+
+## Adding votes from your own indicators
+
+Any custom indicator (or strategy) can participate in the voting layer. Each indicator must use a **unique `sourceId`** string so votes do not overwrite each other.
+
+### Step 1: Add the using directive
+
+```csharp
+using NinjaTrader.Custom.RuleEnforcer;
+```
+
+Ensure `RuleEnforcerState.cs` is in `Documents\NinjaTrader 8\bin\Custom\AddOns\` and compiles successfully.
+
+### Step 2: Define a unique source id
+
+Use a constant that identifies your indicator. The class name is a good default:
+
+```csharp
+private const string VoteSourceId = "MyHigherTfFilter";
+```
+
+### Step 3: Vote in `OnBarUpdate` (or `OnEachTick`)
+
+`shortAllowed = true` means this source **permits** shorts.  
+`shortAllowed = false` means this source **blocks** shorts.
+
+```csharp
+protected override void OnBarUpdate()
+{
+    if (CurrentBar < 20)
+        return;
+
+    bool shortAllowed = Close[0] < SMA(50)[0];   // example: block shorts above 50 SMA
+
+    RuleEnforcerState.SetSourceVote(Instrument.FullName, VoteSourceId, shortAllowed);
+}
+```
+
+Only call `SetSourceVote` when your logic changes if you want to reduce overhead, but calling every bar is fine.
+
+### Step 4: Remove your vote in `State.Terminated`
+
+This is important. When you remove the indicator from a chart, its vote must be withdrawn:
+
+```csharp
+protected override void OnStateChange()
+{
+    if (State == State.SetDefaults)
+    {
+        // ...
+    }
+    else if (State == State.Terminated)
+    {
+        RuleEnforcerState.RemoveSource(Instrument.FullName, VoteSourceId);
+    }
+}
+```
+
+### Full minimal example
+
+```csharp
+#region Using declarations
+using NinjaTrader.Custom.RuleEnforcer;
+using NinjaTrader.NinjaScript;
+using NinjaTrader.NinjaScript.Indicators;
+#endregion
+
+namespace NinjaTrader.NinjaScript.Indicators
+{
+    public class MyShortBlockVoter : Indicator
+    {
+        private const string VoteSourceId = "MyShortBlockVoter";
+        private SMA sma50;
+        private bool lastVote = true;
+
+        protected override void OnStateChange()
+        {
+            if (State == State.SetDefaults)
+            {
+                Name = "My Short Block Voter";
+                Calculate = Calculate.OnBarClose;
+            }
+            else if (State == State.DataLoaded)
+            {
+                sma50 = SMA(50);
+            }
+            else if (State == State.Terminated)
+            {
+                RuleEnforcerState.RemoveSource(Instrument.FullName, VoteSourceId);
+            }
+        }
+
+        protected override void OnBarUpdate()
+        {
+            if (CurrentBar < 50)
+                return;
+
+            bool shortAllowed = Close[0] < sma50[0];
+
+            if (shortAllowed != lastVote)
+            {
+                lastVote = shortAllowed;
+                RuleEnforcerState.SetSourceVote(Instrument.FullName, VoteSourceId, shortAllowed);
+            }
+        }
+    }
+}
+```
+
+### Rules of thumb
+
+1. **One source id per indicator type** — do not reuse another indicator's id.
+2. **Always call `RemoveSource` in `Terminated`** — otherwise ghost votes keep blocking shorts after you remove the indicator.
+3. **Same instrument, multiple charts** — votes are shared by `Instrument.FullName`. Two charts of ES use the same vote pool.
+4. **UI and order guard unchanged** — your indicator only votes; `RuleEnforcerUI` and `RuleEnforcerOrderGuard` read the aggregate automatically.
+5. **Debugging** — call `RuleEnforcerState.GetBlockingSources(Instrument.FullName)` to see which sources are blocking. The **Rule Enforcer Trend** status label also lists active blockers.
+
+### Bypass note
+
+Removing **any** blocking voter from the chart withdraws that vote. Removing **all** voters (including **Rule Enforcer Trend**) clears the block for that instrument. The order guard only enforces while at least one source is actively voting to block.
 
 ## Tuning
 
