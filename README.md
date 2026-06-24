@@ -152,6 +152,11 @@ Together, these layers provide both **visible feedback** and **practical enforce
 
 ## Adding votes from your own indicators
 
+**For Grok / AI-assisted integration:** share this file with other sessions:
+
+- [`examples/GROK-ADD-VOTING-TO-INDICATOR.md`](examples/GROK-ADD-VOTING-TO-INDICATOR.md) — full instructions to paste into Grok
+- [`examples/RuleEnforcerVoterTemplate.cs`](examples/RuleEnforcerVoterTemplate.cs) — copy-paste code template
+
 Any custom indicator (or strategy) can participate in the voting layer. Each indicator must use a **unique `sourceId`** string so votes do not overwrite each other.
 
 ### Step 1: Add the using directive
