@@ -44,12 +44,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 				UseVwapFilter				= true;
 				ShowEma						= true;
 				ShowStatusLabel				= true;
+
+				AddPlot(Brushes.DodgerBlue, "Trend EMA");
 			}
 			else if (State == State.DataLoaded)
 			{
 				trendEma = EMA(EmaPeriod);
-				if (ShowEma)
-					AddChartIndicator(trendEma);
 			}
 			else if (State == State.Terminated)
 				RuleEnforcerState.RemoveSource(Instrument.FullName, VoteSourceId);
@@ -59,6 +59,11 @@ namespace NinjaTrader.NinjaScript.Indicators
 		{
 			if (CurrentBar < BarsRequiredToPlot())
 				return;
+
+			if (ShowEma)
+				Values[0][0] = trendEma[0];
+			else
+				Values[0][0] = double.NaN;
 
 			bool uptrend = IsUptrend();
 			bool sourceAllowsShorts = !uptrend;
