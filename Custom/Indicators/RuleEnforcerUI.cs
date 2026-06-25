@@ -1,18 +1,23 @@
 #region Using declarations
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using NinjaTrader.Custom.RuleEnforcer;
 using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
+using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Indicators;
 #endregion
 
 namespace NinjaTrader.NinjaScript.Indicators
 {
 	/// <summary>
-	/// Greys out Chart Trader sell buttons when RuleEnforcerState blocks shorts.
+	/// Greys out Chart Trader sell buttons and shows aggregate voter status when RuleEnforcerState blocks shorts.
 	/// Requires at least one voting indicator (or any component that calls RuleEnforcerState.SetSourceVote).
 	/// </summary>
 	public class RuleEnforcerUI : Indicator
@@ -43,6 +48,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 				DisplayInDataBox			= false;
 				PaintPriceMarkers			= false;
 				IsSuspendedWhileInactive	= false;
+				ShowStatusLabel				= true;
 			}
 			else if (State == State.Historical)
 			{
@@ -62,6 +68,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 			else if (State == State.Terminated)
 			{
 				RuleEnforcerState.ShortAllowedChanged -= OnShortAllowedChanged;
+				RemoveDrawObject("RuleEnforcerStatus");
 
 				if (ChartControl != null)
 				{
@@ -75,10 +82,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 		protected override void OnBarUpdate()
 		{
-			// Fallback poll in case the trend indicator hasn't fired yet this session.
+			// Fallback poll in case a voter hasn't fired yet this session.
 			bool shortAllowed = RuleEnforcerState.IsShortAllowed(Instrument.FullName);
 			if (shortAllowed != lastAppliedShortAllowed)
 				ApplyShortPermission(shortAllowed);
+			else if (ShowStatusLabel && IsFirstTickOfBar)
+				UpdateStatusLabel();
 		}
 
 		private void OnShortAllowedChanged(string instrumentFullName, bool shortAllowed)
@@ -92,6 +101,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 		private void ApplyShortPermission(bool shortAllowed)
 		{
 			lastAppliedShortAllowed = shortAllowed;
+			UpdateStatusLabel();
 
 			if (ChartControl == null)
 				return;
@@ -107,6 +117,31 @@ namespace NinjaTrader.NinjaScript.Indicators
 						button.IsEnabled = shortAllowed;
 				}
 			});
+		}
+
+		private void UpdateStatusLabel()
+		{
+			if (!ShowStatusLabel)
+			{
+				RemoveDrawObject("RuleEnforcerStatus");
+				return;
+			}
+
+			bool shortAllowed = RuleEnforcerState.IsShortAllowed(Instrument.FullName);
+			string status = shortAllowed
+				? "Shorts: ALLOWED"
+				: FormatBlockedStatus();
+			Brush color = shortAllowed ? Brushes.LimeGreen : Brushes.OrangeRed;
+
+			Draw.TextFixed(this, "RuleEnforcerStatus", status, TextPosition.TopRight, color,
+				new SimpleFont("Arial", 12), Brushes.Transparent, Brushes.Transparent, 0);
+		}
+
+		private string FormatBlockedStatus()
+		{
+			string[] blockers = RuleEnforcerState.GetBlockingSources(Instrument.FullName);
+			string blockerText = blockers.Length > 0 ? string.Join(", ", blockers) : "unknown";
+			return string.Format("Shorts: BLOCKED ({0})", blockerText);
 		}
 
 		private void CreateWpfControls()
@@ -184,6 +219,14 @@ namespace NinjaTrader.NinjaScript.Indicators
 			controlsActive = TabSelected();
 			ApplyShortPermission(RuleEnforcerState.IsShortAllowed(Instrument.FullName));
 		}
+
+		#region Properties
+
+		[NinjaScriptProperty]
+		[Display(Name = "Show Status Label", Description = "Shows aggregate short permission and blocking voter names.", Order = 1, GroupName = "Display")]
+		public bool ShowStatusLabel { get; set; }
+
+		#endregion
 	}
 }
 
@@ -194,18 +237,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private RuleEnforcerUI[] cacheRuleEnforcerUI;
-		public RuleEnforcerUI RuleEnforcerUI()
+		public RuleEnforcerUI RuleEnforcerUI(bool showStatusLabel)
 		{
-			return RuleEnforcerUI(Input);
+			return RuleEnforcerUI(Input, showStatusLabel);
 		}
 
-		public RuleEnforcerUI RuleEnforcerUI(ISeries<double> input)
+		public RuleEnforcerUI RuleEnforcerUI(ISeries<double> input, bool showStatusLabel)
 		{
 			if (cacheRuleEnforcerUI != null)
 				for (int idx = 0; idx < cacheRuleEnforcerUI.Length; idx++)
-					if (cacheRuleEnforcerUI[idx] != null && cacheRuleEnforcerUI[idx].EqualsInput(input))
+					if (cacheRuleEnforcerUI[idx] != null && cacheRuleEnforcerUI[idx].ShowStatusLabel == showStatusLabel && cacheRuleEnforcerUI[idx].EqualsInput(input))
 						return cacheRuleEnforcerUI[idx];
-			return CacheIndicator<RuleEnforcerUI>(new RuleEnforcerUI(), input, ref cacheRuleEnforcerUI);
+			return CacheIndicator<RuleEnforcerUI>(new RuleEnforcerUI(){ ShowStatusLabel = showStatusLabel }, input, ref cacheRuleEnforcerUI);
 		}
 	}
 }
@@ -214,14 +257,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.RuleEnforcerUI RuleEnforcerUI()
+		public Indicators.RuleEnforcerUI RuleEnforcerUI(bool showStatusLabel)
 		{
-			return indicator.RuleEnforcerUI(Input);
+			return indicator.RuleEnforcerUI(Input, showStatusLabel);
 		}
 
-		public Indicators.RuleEnforcerUI RuleEnforcerUI(ISeries<double> input )
+		public Indicators.RuleEnforcerUI RuleEnforcerUI(ISeries<double> input , bool showStatusLabel)
 		{
-			return indicator.RuleEnforcerUI(input);
+			return indicator.RuleEnforcerUI(input, showStatusLabel);
 		}
 	}
 }
@@ -230,14 +273,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.RuleEnforcerUI RuleEnforcerUI()
+		public Indicators.RuleEnforcerUI RuleEnforcerUI(bool showStatusLabel)
 		{
-			return indicator.RuleEnforcerUI(Input);
+			return indicator.RuleEnforcerUI(Input, showStatusLabel);
 		}
 
-		public Indicators.RuleEnforcerUI RuleEnforcerUI(ISeries<double> input )
+		public Indicators.RuleEnforcerUI RuleEnforcerUI(ISeries<double> input , bool showStatusLabel)
 		{
-			return indicator.RuleEnforcerUI(input);
+			return indicator.RuleEnforcerUI(input, showStatusLabel);
 		}
 	}
 }

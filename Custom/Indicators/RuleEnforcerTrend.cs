@@ -4,9 +4,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Windows.Media;
 using NinjaTrader.Custom.RuleEnforcer;
-using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
-using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Indicators;
 #endregion
 
@@ -43,7 +41,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 				RequireRisingEma			= true;
 				UseVwapFilter				= true;
 				ShowEma						= true;
-				ShowStatusLabel				= true;
 
 				AddPlot(Brushes.DodgerBlue, "Trend EMA");
 			}
@@ -74,23 +71,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 				RuleEnforcerState.SetSourceVote(Instrument.FullName, VoteSourceId, sourceAllowsShorts);
 			}
 
-			if (ShowStatusLabel && IsFirstTickOfBar)
-			{
-				bool aggregateAllowsShorts = RuleEnforcerState.IsShortAllowed(Instrument.FullName);
-				string status = aggregateAllowsShorts
-					? "Shorts: ALLOWED"
-					: FormatBlockedStatus();
-				Brush color = aggregateAllowsShorts ? Brushes.LimeGreen : Brushes.OrangeRed;
-				Draw.TextFixed(this, "RuleEnforcerStatus", status, TextPosition.TopRight, color,
-					new SimpleFont("Arial", 12), Brushes.Transparent, Brushes.Transparent, 0);
-			}
-		}
-
-		private string FormatBlockedStatus()
-		{
-			string[] blockers = RuleEnforcerState.GetBlockingSources(Instrument.FullName);
-			string blockerText = blockers.Length > 0 ? string.Join(", ", blockers) : VoteSourceId;
-			return string.Format("Shorts: BLOCKED ({0})", blockerText);
 		}
 
 		private int BarsRequiredToPlot() => Math.Max(EmaPeriod + 1, 2);
@@ -143,10 +123,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 		[Display(Name = "Show EMA", Order = 1, GroupName = "Display")]
 		public bool ShowEma { get; set; }
 
-		[NinjaScriptProperty]
-		[Display(Name = "Show Status Label", Order = 2, GroupName = "Display")]
-		public bool ShowStatusLabel { get; set; }
-
 		#endregion
 	}
 }
@@ -158,18 +134,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private RuleEnforcerTrend[] cacheRuleEnforcerTrend;
-		public RuleEnforcerTrend RuleEnforcerTrend(int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma, bool showStatusLabel)
+		public RuleEnforcerTrend RuleEnforcerTrend(int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma)
 		{
-			return RuleEnforcerTrend(Input, emaPeriod, requireRisingEma, useVwapFilter, showEma, showStatusLabel);
+			return RuleEnforcerTrend(Input, emaPeriod, requireRisingEma, useVwapFilter, showEma);
 		}
 
-		public RuleEnforcerTrend RuleEnforcerTrend(ISeries<double> input, int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma, bool showStatusLabel)
+		public RuleEnforcerTrend RuleEnforcerTrend(ISeries<double> input, int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma)
 		{
 			if (cacheRuleEnforcerTrend != null)
 				for (int idx = 0; idx < cacheRuleEnforcerTrend.Length; idx++)
-					if (cacheRuleEnforcerTrend[idx] != null && cacheRuleEnforcerTrend[idx].EmaPeriod == emaPeriod && cacheRuleEnforcerTrend[idx].RequireRisingEma == requireRisingEma && cacheRuleEnforcerTrend[idx].UseVwapFilter == useVwapFilter && cacheRuleEnforcerTrend[idx].ShowEma == showEma && cacheRuleEnforcerTrend[idx].ShowStatusLabel == showStatusLabel && cacheRuleEnforcerTrend[idx].EqualsInput(input))
+					if (cacheRuleEnforcerTrend[idx] != null && cacheRuleEnforcerTrend[idx].EmaPeriod == emaPeriod && cacheRuleEnforcerTrend[idx].RequireRisingEma == requireRisingEma && cacheRuleEnforcerTrend[idx].UseVwapFilter == useVwapFilter && cacheRuleEnforcerTrend[idx].ShowEma == showEma && cacheRuleEnforcerTrend[idx].EqualsInput(input))
 						return cacheRuleEnforcerTrend[idx];
-			return CacheIndicator<RuleEnforcerTrend>(new RuleEnforcerTrend(){ EmaPeriod = emaPeriod, RequireRisingEma = requireRisingEma, UseVwapFilter = useVwapFilter, ShowEma = showEma, ShowStatusLabel = showStatusLabel }, input, ref cacheRuleEnforcerTrend);
+			return CacheIndicator<RuleEnforcerTrend>(new RuleEnforcerTrend(){ EmaPeriod = emaPeriod, RequireRisingEma = requireRisingEma, UseVwapFilter = useVwapFilter, ShowEma = showEma }, input, ref cacheRuleEnforcerTrend);
 		}
 	}
 }
@@ -178,14 +154,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma, bool showStatusLabel)
+		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma)
 		{
-			return indicator.RuleEnforcerTrend(Input, emaPeriod, requireRisingEma, useVwapFilter, showEma, showStatusLabel);
+			return indicator.RuleEnforcerTrend(Input, emaPeriod, requireRisingEma, useVwapFilter, showEma);
 		}
 
-		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(ISeries<double> input , int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma, bool showStatusLabel)
+		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(ISeries<double> input , int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma)
 		{
-			return indicator.RuleEnforcerTrend(input, emaPeriod, requireRisingEma, useVwapFilter, showEma, showStatusLabel);
+			return indicator.RuleEnforcerTrend(input, emaPeriod, requireRisingEma, useVwapFilter, showEma);
 		}
 	}
 }
@@ -194,14 +170,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma, bool showStatusLabel)
+		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma)
 		{
-			return indicator.RuleEnforcerTrend(Input, emaPeriod, requireRisingEma, useVwapFilter, showEma, showStatusLabel);
+			return indicator.RuleEnforcerTrend(Input, emaPeriod, requireRisingEma, useVwapFilter, showEma);
 		}
 
-		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(ISeries<double> input , int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma, bool showStatusLabel)
+		public Indicators.RuleEnforcerTrend RuleEnforcerTrend(ISeries<double> input , int emaPeriod, bool requireRisingEma, bool useVwapFilter, bool showEma)
 		{
-			return indicator.RuleEnforcerTrend(input, emaPeriod, requireRisingEma, useVwapFilter, showEma, showStatusLabel);
+			return indicator.RuleEnforcerTrend(input, emaPeriod, requireRisingEma, useVwapFilter, showEma);
 		}
 	}
 }

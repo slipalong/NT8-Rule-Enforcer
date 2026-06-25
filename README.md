@@ -48,7 +48,7 @@ Both indicators must be on the same chart as Chart Trader.
 ### 4. Verify it is working
 
 - During an uptrend, Chart Trader sell buttons should be greyed out
-- The chart label should show `Shorts: BLOCKED (21 EMA + VWAP uptrend)`
+- The chart label (from **Rule Enforcer UI**) should show `Shorts: BLOCKED (YourVoterName, ...)`
 - Attempting a short entry should produce a cancellation message in the **Output** window from the Order Guard
 
 ## Theory of Operation
@@ -108,7 +108,16 @@ Session VWAP is calculated inline and resets on each new session bar (`Bars.IsFi
 
 ### 3. Chart Trader UI (`RuleEnforcerUI`)
 
-This indicator does not place orders. It listens to `RuleEnforcerState` and manipulates the Chart Trader WPF controls on the UI thread via `ChartControl.Dispatcher`.
+This indicator does not place orders. It listens to `RuleEnforcerState`, greys out Chart Trader sell buttons, and displays an aggregate status label (top-right) listing which voters are blocking shorts.
+
+Status examples:
+
+- `Shorts: ALLOWED`
+- `Shorts: BLOCKED (MyEmaFilter, MyVwapFilter)`
+
+Toggle the label with **Show Status Label** in the indicator properties.
+
+It manipulates Chart Trader WPF controls on the UI thread via `ChartControl.Dispatcher`.
 
 Sell buttons are located by NinjaTrader AutomationId:
 
@@ -148,7 +157,7 @@ Together, these layers provide both **visible feedback** and **practical enforce
 | Require Rising EMA | true | Prevents blocking shorts on a flat/slipping EMA |
 | Use VWAP Filter | true | Requires price above session VWAP |
 | Show EMA | true | Displays the 21 EMA on chart |
-| Show Status Label | true | Top-right block/allow label |
+| Show Status Label (on **Rule Enforcer UI**) | true | Top-right block/allow label with voter names |
 
 ## Adding votes from your own indicators
 
@@ -269,7 +278,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 2. **Always call `RemoveSource` in `Terminated`** — otherwise ghost votes keep blocking shorts after you remove the indicator.
 3. **Same instrument, multiple charts** — votes are shared by `Instrument.FullName`. Two charts of ES use the same vote pool.
 4. **UI and order guard unchanged** — your indicator only votes; `RuleEnforcerUI` and `RuleEnforcerOrderGuard` read the aggregate automatically.
-5. **Debugging** — call `RuleEnforcerState.GetBlockingSources(Instrument.FullName)` to see which sources are blocking. The **Rule Enforcer Trend** status label also lists active blockers.
+5. **Debugging** — call `RuleEnforcerState.GetBlockingSources(Instrument.FullName)` to see which sources are blocking. The **Rule Enforcer UI** status label lists active blockers on chart.
 
 ### Bypass note
 
